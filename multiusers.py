@@ -63,21 +63,38 @@ def apply_streamlit_secrets_overrides() -> None:
             continue
 
 
+def _resolve_log_dir() -> Path | None:
+    """로컬은 저장소 `logs/`, Streamlit Cloud 등은 `/tmp` 하위로 폴백."""
+    for base in (LOG_DIR, Path(tempfile.gettempdir()) / "multiusers_logs"):
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+            probe = base / ".write_probe"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return base
+        except OSError:
+            continue
+    return None
+
+
 def _setup_logging() -> logging.Logger:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log_name = f"multiusers_{datetime.now().strftime('%Y%m%d')}.log"
-    log_path = LOG_DIR / log_name
     root = logging.getLogger()
     root.handlers.clear()
     root.setLevel(logging.WARNING)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    fh = logging.FileHandler(log_path, encoding="utf-8")
-    fh.setLevel(logging.WARNING)
-    fh.setFormatter(fmt)
+    log_dir = _resolve_log_dir()
+    if log_dir is not None:
+        log_path = log_dir / f"multiusers_{datetime.now().strftime('%Y%m%d')}.log"
+        try:
+            fh = logging.FileHandler(log_path, encoding="utf-8")
+            fh.setLevel(logging.WARNING)
+            fh.setFormatter(fmt)
+            root.addHandler(fh)
+        except OSError:
+            pass
     ch = logging.StreamHandler()
     ch.setLevel(logging.WARNING)
     ch.setFormatter(fmt)
-    root.addHandler(fh)
     root.addHandler(ch)
     for name in (
         "httpx",
